@@ -1,0 +1,17 @@
+# Credentials and session data never leave this machine.
+.env
+.env.*
+!.env.example
+.telegram-data/
+*.session
+search.db
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Build output and local reports
+dist/
+reports/

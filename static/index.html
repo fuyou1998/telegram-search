@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="本地运行的多语言 Telegram 群组与频道检索：AI 扩展关键词、多来源并查、重复频道合并、按群语言搜群内消息。">
+    <title>Telegram 检索 · 多语言群组频道搜索</title>
+    <link rel="icon" href="/static/icon-32.png" type="image/png">
+    <link rel="apple-touch-icon" href="/static/icon-128.png">
+    <link rel="stylesheet" href="/static/style.css?v=1">
+    <script src="/static/app.js?v=1" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="frame topbar-inner">
+        <a class="brand" href="/" aria-label="Telegram 检索首页">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span id="brand-name">极目</span>
+          <span class="brand-tag">Telegram 检索</span>
+        </a>
+        <button class="connection" id="connection-button" type="button" aria-haspopup="dialog">
+          <span id="connection-dot" class="signal" aria-hidden="true"></span>
+          <span id="connection-label">正在检查连接</span>
+          <span class="connection-arrow" aria-hidden="true">设置 ↗</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="frame">
+      <section class="intro" aria-labelledby="page-title">
+        <div class="intro-content">
+          <p class="eyebrow">本地运行 · 账号会话保存在本机</p>
+          <h1 id="page-title">一次输入，搜遍 Telegram 的<br>中文、英文、俄语、波斯语和阿拉伯语社群</h1>
+          <p class="lede">
+            自动把关键词扩展成多语言变体，同时查官方搜索和你指定的搜索机器人，
+            合并重复频道、补齐成员数，并按群组自己的语言检索群内消息。
+          </p>
+          <form id="search-form" class="search-form" role="search">
+            <label class="visually-hidden" for="query">搜索关键词</label>
+            <span class="magnifier" aria-hidden="true"></span>
+            <input id="query" name="query" placeholder="输入任意关键词，例如「漫画」" maxlength="200" autocomplete="off" enterkeyhint="search" required>
+            <button class="primary search-button" id="search-button" type="submit">搜索 <span aria-hidden="true">→</span></button>
+          </form>
+          <div class="progressbar" id="progressbar" hidden><span></span></div>
+          <div class="search-feedback" id="search-feedback" aria-live="polite"></div>
+        </div>
+        <ul class="highlights" aria-label="主要特性">
+          <li><strong>多语言变体</strong><span>俄语、波斯语、阿拉伯语、印尼语等，用原生文字命中本地社群</span></li>
+          <li><strong>多来源并查</strong><span>官方搜索 + 你添加的搜索机器人，结果合并去重</span></li>
+          <li><strong>重复频道合并</strong><span>同一份内容被复制成几十个号时，只留成员最多的那个</span></li>
+          <li><strong>按群语言搜群内</strong><span>进俄语群就用俄语词，不会把中文关键词硬套上去</span></li>
+        </ul>
+        <div class="intro-lines" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+      </section>
+
+      <aside class="promo" id="promo" hidden>
+        <div class="promo-body">
+          <p class="promo-title" id="promo-title"></p>
+          <p class="promo-text" id="promo-text"></p>
+        </div>
+        <a class="promo-link" id="promo-link" href="#" target="_blank" rel="noopener noreferrer">去看看 ↗</a>
+        <button class="promo-close" id="promo-close" type="button" aria-label="不再显示">×</button>
+      </aside>
+
+      <div class="workspace">
+        <aside class="diagnostics" aria-labelledby="diagnostics-title">
+          <h2 id="diagnostics-title">搜索详情</h2>
+          <section class="source-section" aria-labelledby="source-title">
+            <h3 id="source-title">检索来源</h3>
+            <ul id="source-list" class="source-list"></ul>
+          </section>
+          <section class="variant-section" aria-labelledby="variant-title">
+            <h3 id="variant-title">实际查询词</h3>
+            <p id="variant-status" class="assistive-note">开始搜索后显示。</p>
+            <ul id="query-variants" class="query-variants"></ul>
+          </section>
+          <section class="history-section" aria-labelledby="history-title">
+            <h3 id="history-title">最近搜索</h3>
+            <ul id="history-list" class="history-list"></ul>
+          </section>
+        </aside>
+
+        <section class="results" aria-labelledby="results-title">
+          <div class="results-header">
+            <div class="results-heading">
+              <h2 id="results-title">搜索结果</h2>
+              <p class="results-meta" id="result-count" aria-live="polite" aria-atomic="true"></p>
+            </div>
+            <button class="outline-button" id="cancel-search" type="button" hidden>停止搜索</button>
+          </div>
+
+          <div class="result-tools" id="result-tools" hidden>
+            <div class="result-controls">
+              <div class="filters" id="filters" role="group" aria-label="筛选结果类型">
+                <button type="button" data-kind="all" aria-pressed="true">全部</button>
+                <button type="button" data-kind="group" aria-pressed="false">群组</button>
+                <button type="button" data-kind="channel" aria-pressed="false">频道</button>
+              </div>
+              <label class="source-weight" for="source-weight">
+                排序权重
+                <select id="source-weight"></select>
+              </label>
+            </div>
+            <button class="outline-button join-button" id="join-button" type="button" disabled>加入所选</button>
+          </div>
+          <p class="join-notice" id="join-notice" aria-live="polite" hidden></p>
+
+          <div class="empty-state" id="empty-state">
+            <span class="empty-mark" aria-hidden="true">⌕</span>
+            <p id="empty-title">输入关键词，开始搜索</p>
+            <p class="empty-detail" id="empty-detail">结果会显示群组和频道的名称、成员数、来源与链接。</p>
+          </div>
+          <ul id="result-list" class="result-list" aria-label="群组和频道搜索结果"></ul>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="frame footer-inner">
+        <p><span id="footer-brand">极目</span> · 会话与历史保存在本机；搜索词会发送给 Telegram，配置 AI 时也会发送给所选服务</p>
+        <p class="footer-links">
+          <a id="footer-promo" href="#" target="_blank" rel="noopener noreferrer" hidden>加入交流群 ↗</a>
+          <a id="footer-channel" href="#" target="_blank" rel="noopener noreferrer" hidden>频道 ↗</a>
+          <a href="https://my.telegram.org/apps" target="_blank" rel="noopener noreferrer">获取 api_id</a>
+        </p>
+      </div>
+    </footer>
+
+    <dialog class="setup-dialog" id="connection-dialog" aria-labelledby="setup-title">
+      <form method="dialog" class="setup-header">
+        <h2 id="setup-title">设置</h2>
+        <button class="icon-button" type="submit" aria-label="关闭设置">×</button>
+      </form>
+      <div class="setup-body">
+        <section class="setup-section" aria-labelledby="setup-tg-title">
+          <h3 id="setup-tg-title">Telegram 账号</h3>
+          <p id="setup-telegram"></p>
+          <form id="telegram-credentials" class="settings-form">
+            <label for="telegram-api-id">App api_id</label>
+            <input id="telegram-api-id" inputmode="numeric" autocomplete="off" maxlength="10" required>
+            <label for="telegram-api-hash">App api_hash</label>
+            <input id="telegram-api-hash" type="password" autocomplete="off" minlength="32" maxlength="32" required>
+            <button id="save-telegram" class="outline-button" type="submit">保存到本机</button>
+          </form>
+          <p class="assistive-note" id="save-telegram-status" role="status" hidden></p>
+          <p class="assistive-note" id="setup-telegram-help">保存后运行 <code>telegram-login.cmd</code> 完成登录，回来点「刷新状态」。</p>
+        </section>
+
+        <section class="setup-section" aria-labelledby="setup-sources-title">
+          <h3 id="setup-sources-title">检索来源</h3>
+          <p class="assistive-note">官方搜索之外，可以添加你信任的搜索机器人。发 <code>/search 关键词</code> 的机器人都能加，最多 5 个。</p>
+          <ul class="bot-list" id="bot-list"></ul>
+          <form class="bot-add" id="bot-form">
+            <label class="visually-hidden" for="bot-input">机器人用户名</label>
+            <input id="bot-input" class="bot-input" placeholder="@另一个搜索机器人" autocomplete="off" maxlength="40">
+            <button class="outline-button" type="submit">添加</button>
+          </form>
+          <p class="assistive-note" id="bot-status" role="status" hidden></p>
+        </section>
+
+        <section class="setup-section" aria-labelledby="setup-search-title">
+          <h3 id="setup-search-title">搜索选项</h3>
+          <div class="settings-row">
+            <span>同时使用 Telegram 官方搜索</span>
+            <label class="switch">
+              <input type="checkbox" id="official-search" aria-label="启用 Telegram 官方搜索">
+              <i aria-hidden="true"></i>
+            </label>
+          </div>
+          <div class="settings-row">
+            <span>补齐成员数与简介</span>
+            <label class="switch">
+              <input type="checkbox" id="enrich-toggle" aria-label="补齐成员数与简介">
+              <i aria-hidden="true"></i>
+            </label>
+          </div>
+          <form class="settings-form" id="search-options">
+            <label for="bot-variants">每个机器人检索几个关键词（1–8）</label>
+            <input id="bot-variants" type="number" min="1" max="8" step="1">
+            <label for="max-variants">本次最多使用几个关键词变体（4–20）</label>
+            <input id="max-variants" type="number" min="4" max="20" step="1">
+            <button class="outline-button" type="submit">保存搜索选项</button>
+          </form>
+          <p class="assistive-note" id="search-options-status" role="status" hidden></p>
+        </section>
+
+        <section class="setup-section" aria-labelledby="setup-network-title">
+          <h3 id="setup-network-title">网络代理</h3>
+          <p class="assistive-note">本地端口模式填加速器端口；若开启 TUN（接管所有流量）模式，留空，避免双重代理。仅开启 Windows「系统代理」未必能代理 Telegram。</p>
+          <form id="network-settings" class="settings-form">
+            <label for="telegram-proxy">代理地址</label>
+            <input id="telegram-proxy" placeholder="socks5://127.0.0.1:7897" autocomplete="off" maxlength="200">
+            <div class="form-actions">
+              <button id="save-network" class="outline-button" type="submit">保存代理</button>
+              <button id="detect-proxy" class="outline-button" type="button">自动检测</button>
+            </div>
+          </form>
+          <p class="assistive-note" id="save-network-status" role="status" hidden></p>
+        </section>
+
+        <section class="setup-section" aria-labelledby="setup-ai-title">
+          <h3 id="setup-ai-title">关键词扩展 AI</h3>
+          <p id="setup-ai"></p>
+          <form id="ai-settings" class="settings-form">
+            <label for="ai-base-url">Base URL</label>
+            <input id="ai-base-url" placeholder="https://api.openai.com/v1" autocomplete="off" maxlength="300">
+            <label for="ai-model">模型</label>
+            <input id="ai-model" placeholder="glm-5.3" autocomplete="off" maxlength="100">
+            <label for="ai-key">API Key</label>
+            <input id="ai-key" type="password" placeholder="留空表示不修改已保存的 Key" autocomplete="off" maxlength="400">
+            <label for="ai-languages">要覆盖的语言（逗号分隔，写中文名也可以）</label>
+            <textarea id="ai-languages" rows="3" maxlength="800" placeholder="Russian, Persian, Arabic, Indonesian, Turkish"></textarea>
+            <label for="ai-language-count">每个关键词最多翻译成几种语言（1–10）</label>
+            <input id="ai-language-count" type="number" min="1" max="10" step="1">
+            <button id="save-ai" class="outline-button" type="submit">保存关键词扩展</button>
+          </form>
+          <p class="assistive-note" id="save-ai-status" role="status" hidden></p>
+          <p class="assistive-note">在线服务只接收搜索词和扩展指令。不填也能用，只是跨语言变体会少一些。</p>
+        </section>
+
+        <section class="setup-section" aria-labelledby="setup-brand-title">
+          <h3 id="setup-brand-title">品牌与推广</h3>
+          <p class="assistive-note">分发时留上自己的频道或群组，用的人会在首页看到。</p>
+          <form id="brand-settings" class="settings-form">
+            <label for="brand-input">站点名称</label>
+            <input id="brand-input" placeholder="极目" autocomplete="off" maxlength="40">
+            <label for="promo-title-input">推广标题</label>
+            <input id="promo-title-input" placeholder="例如：加入我们的 Telegram 交流群" autocomplete="off" maxlength="80">
+            <label for="promo-text-input">推广说明</label>
+            <input id="promo-text-input" placeholder="一句话介绍，可留空" autocomplete="off" maxlength="200">
+            <label for="promo-url-input">交流群链接</label>
+            <input id="promo-url-input" placeholder="https://t.me/your_group" autocomplete="off" maxlength="300">
+            <label for="promo-channel-input">频道链接</label>
+            <input id="promo-channel-input" placeholder="https://t.me/your_channel" autocomplete="off" maxlength="300">
+            <button id="save-brand" class="outline-button" type="submit">保存品牌与推广</button>
+          </form>
+          <p class="assistive-note" id="brand-status" role="status" hidden></p>
+        </section>
+
+        <div class="setup-footer">
+          <button class="outline-button" id="refresh-status" type="button">刷新状态</button>
+          <button class="outline-button danger-button" id="shutdown-app" type="button">退出极目</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="setup-dialog message-dialog" id="messages-dialog" aria-labelledby="messages-title">
+      <form method="dialog" class="setup-header">
+        <h2 id="messages-title">群内搜索</h2>
+        <button class="icon-button" type="submit" aria-label="关闭群内搜索">×</button>
+      </form>
+      <div class="setup-body">
+        <p class="message-status" id="messages-status" role="status"></p>
+        <p class="assistive-note" id="messages-queries" hidden></p>
+        <ul class="message-list" id="messages-list" aria-label="匹配的消息"></ul>
+      </div>
+    </dialog>
+  </body>
+</html>
