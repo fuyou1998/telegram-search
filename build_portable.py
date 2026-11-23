@@ -30,6 +30,7 @@ APP_FILES = [
     "launcher.py", "server.py", "settings.py", "telegram_source.py", "search_quality.py",
     "history.py", "proxy_probe.py", "telegram_login.py", "compare.py", "test_server.py",
     "README.md", "LICENSE", ".env.example", "requirements.txt", "create-shortcuts.ps1",
+    "screenshot.jpg",
 ]
 APP_DIRS = ["static"]
 
