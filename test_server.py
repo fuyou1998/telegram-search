@@ -1,4 +1,6 @@
 import asyncio
+import datetime
+import json
 import tempfile
 import time
 import unittest
@@ -9,6 +11,8 @@ from fastapi.testclient import TestClient
 
 import history
 import proxy_probe
+import daily_digest
+import channel_card
 import server
 import telegram_login
 from search_quality import build_prompt, channel_scripts, order_queries, rank_candidates, scripts_of
@@ -196,6 +200,107 @@ class ProxyProbeTests(unittest.TestCase):
             telegram_login.ask_proxy(settings)
         detect.assert_not_called()
         save.assert_not_called()
+
+
+class DailyDigestTests(unittest.TestCase):
+    def test_topic_rotation_is_stable(self):
+        topics = ["one", "two", "three"]
+        day = datetime.date(2026, 11, 24)
+        self.assertEqual(daily_digest.topic_for_day(topics, day), daily_digest.topic_for_day(topics, day))
+        self.assertIn(daily_digest.topic_for_day(topics, day), topics)
+
+    def test_recently_seen_candidates_are_skipped_first(self):
+        today = datetime.date(2026, 11, 24)
+        rows = [
+            {"url": "https://t.me/group_one", "title": "Group one", "kind": "group"},
+            {"url": "https://t.me/group_two", "title": "Group two", "kind": "group"},
+        ]
+        seen = {"https://t.me/group_one": "2026-11-20"}
+        picked = daily_digest.select_candidates(rows, seen, 2, today)
+        self.assertEqual([row["url"] for row in picked], ["https://t.me/group_two", "https://t.me/group_one"])
+
+    def test_draft_contains_review_disclaimer_and_never_sends(self):
+        draft = daily_digest.render_draft("漫画", [{
+            "url": "https://t.me/manga_group",
+            "title": "漫画交流群",
+            "kind": "group",
+            "members": 123,
+            "sources": ["telegram"],
+            "description": "分享漫画推荐",
+        }], datetime.date(2026, 11, 24))
+        self.assertIn("https://t.me/manga_group", draft)
+        self.assertIn("不代表极目对群组内容作背书", draft)
+        self.assertIn(daily_digest.GROUP_URL, draft)
+        self.assertFalse(hasattr(daily_digest, "send_message"))
+
+
+class ChannelCardTests(unittest.TestCase):
+    def test_ai_json_is_bounded_and_indices_are_parsed(self):
+        parsed = channel_card.parse_ai_json(json.dumps({
+            "overview": "分享开源软件",
+            "topics": ["软件", "开发", "群组", "extra"],
+            "recent": [{"index": 1, "summary": "发布了工具"}, {"index": 9, "summary": "越界项"}],
+            "promotion_indices": [1, 99, "bad"],
+        }, ensure_ascii=False), post_count=2)
+        self.assertEqual(parsed["overview"], "分享开源软件")
+        self.assertEqual(parsed["topics"], ["软件", "开发", "群组"])
+        self.assertEqual(parsed["recent"], [{"index": 1, "summary": "发布了工具"}])
+        self.assertEqual(parsed["promotion_indices"], [1])
+
+    def test_channel_card_includes_measured_facts_and_review_warning(self):
+        review = {
+            "channel": {
+                "title": "开源工具分享",
+                "url": "https://t.me/open_tools",
+                "username": "open_tools",
+                "kind": "channel",
+                "members": 1200,
+                "about": "分享开源项目",
+                "sampled_posts": 2,
+                "latest_post_at": "2026-11-24T10:00:00+00:00",
+                "active_days": 2,
+                "average_views": 450,
+            },
+            "posts": [
+                {"date": "2026-11-24T10:00:00+00:00", "text": "更新工具 https://example.com",
+                 "url": "https://t.me/open_tools/10"},
+                {"date": "2026-11-23T10:00:00+00:00", "text": "分享代码",
+                 "url": "https://t.me/open_tools/9"},
+            ],
+        }
+        ai = {
+            "overview": "分享开源工具和代码。",
+            "topics": ["开源软件"],
+            "recent": [{"index": 0, "summary": "发布工具更新"}],
+            "promotion_indices": [0],
+        }
+        card = channel_card.render_card(review, ai)
+        self.assertIn("1,200", card)
+        self.assertIn("450", card)
+        self.assertIn("https://t.me/open_tools/10", card)
+        self.assertIn("AI 判断，需人工核实", card)
+        self.assertIn("不代表极目对频道内容作背书", card)
+
+    def test_html_preview_escapes_public_channel_text(self):
+        review = {
+            "channel": {
+                "title": "<script>alert(1)</script>",
+                "url": "https://t.me/safe_channel",
+                "username": "safe_channel",
+                "kind": "channel",
+                "members": 12,
+                "about": "公开简介",
+                "sampled_posts": 0,
+                "latest_post_at": "",
+                "active_days": 0,
+                "average_views": None,
+            },
+            "posts": [],
+        }
+        page = channel_card.render_preview_html(review, None)
+        self.assertIn("&lt;script&gt;", page)
+        self.assertNotIn("<script>alert(1)</script>", page)
+        self.assertIn("打开频道", page)
 
 
 class RankingTests(unittest.TestCase):

@@ -8,7 +8,8 @@ English README: [README.en.md](README.en.md)
 
 **极目**（Jí Mù）是一个**本地运行**的 Telegram 群组/频道检索工具：用你自己的账号登录，在你自己的电脑上运行。
 账号会话、搜索历史和结果保存在本机，不经过本项目的服务器。搜索词和扩展后的关键词会发送给 Telegram；
-配置在线 AI 时，原始搜索词也会发送给你选择的 AI 服务。工具会同时查官方搜索和你指定的搜索机器人，
+配置在线 AI 时，原始搜索词也会发送给你选择的 AI 服务。使用 `channel_card.py --ai` 时，
+该公开频道的简介和近期公开帖样本也会发给 AI 生成介绍。工具会同时查官方搜索和你指定的搜索机器人，
 合并重复频道、补齐成员数，还能按群组自己的语言去翻群内消息。
 
 > 名字、频道链接都可以在页面的「设置 › 品牌与推广」里改成你自己的。
@@ -25,7 +26,7 @@ English README: [README.en.md](README.en.md)
 | **按群语言搜群内** | 进俄语频道就用俄语词检索，不会把中文关键词硬套上去。检索用词在界面上可见。 |
 | **排序权重可调** | 均衡 / 偏向某个来源，随时切换，只改排序不删结果。 |
 | **元数据补齐** | 自动补成员数和简介，排序和判断活跃度都更准。 |
-| **本地优先** | 登录会话、历史记录和排序都在本机；搜索请求发给 Telegram，AI 仅收到原始搜索词。 |
+| **本地优先** | 登录会话、历史记录和排序都在本机；搜索请求发给 Telegram，AI 扩词只收原始搜索词。 |
 | **零安装分发** | 内置 Python 的便携包，别人解压双击就能用，不需要装任何东西。 |
 
 ## 快速开始
@@ -141,6 +142,49 @@ python compare.py "VPN 推荐" "加密货币 交易 机器人" --csv reports\com
 python compare.py --topics topics.txt --baseline manual.json
 ```
 
+## 每日频道草稿
+
+`daily-digest.cmd` 会从本地搜索服务取一个主题的结果，挑选最多 3 个近 14 天未重复的公开候选，
+写入 `.telegram-data/drafts/日期.txt`。**只生成草稿，不会自动发到频道**；检查群规、链接和内容后再手动复制发布。
+
+```bat
+daily-digest.cmd
+daily-digest.cmd --topic "开源 AI 工具"
+```
+
+默认主题轮换在 `daily_topics.example.txt`。复制为 `daily_topics.txt` 后，每行写一个你想覆盖的主题。
+如果要每天自动生成草稿，可在 Windows 任务计划程序中安排 `daily-digest.cmd`；
+需要先启动「极目」服务。草稿和去重记录保存在本机，不会提交到 GitHub。
+
+## AI 频道推荐卡片
+
+想做成频道推荐卡片（简介、近期动态、样本活跃度），给脚本一个公开频道链接：
+
+```bat
+python channel_card.py https://t.me/tgtuijian
+```
+
+不加 `--ai` 时，本地只整理公开简介、成员数、最近帖子时间、浏览数和帖子摘录。
+加 `--ai` 才会把该频道的公开简介与最多 30 条近期公开帖样本发送给你配置的 AI 服务，生成内容摘要和主题标签：
+
+```bat
+python channel_card.py https://t.me/tgtuijian --ai
+```
+
+草稿写入 `.telegram-data/drafts/`。**不会自动发布**；发布前请人工核实摘要、链接与 AI 标出的推广信号。
+可先手动挑一个频道确认质量，再考虑接入每日精选流程。
+
+也可以让每日主题搜索自动挑首选候选，再生成同样的频道卡片草稿：
+
+```bat
+daily-digest.cmd --card --ai
+```
+
+这会搜索当天轮换的主题、分析排名第一的候选并生成文案/HTML 预览/头像素材；仍需人工审核后发布。
+
+目前这是本地草稿生成器，还不是一个可供其他人私聊投稿的 Bot。若后续增加投稿和发布机器人，
+会使用单独的 BotFather token 与管理员审核；不会向投稿者索要手机号、验证码或登录 session。
+
 ## 打包给别人用
 
 ```bat
@@ -201,6 +245,8 @@ settings.py        .env 读取与写入
 history.py         搜索历史、扩展缓存、变体产出统计（SQLite）
 proxy_probe.py     自动探测本机代理端口（含 Telegram 端到端验证）
 compare.py         与人工搜索对比
+daily_digest.py    生成每日精选群组草稿，不自动发布
+channel_card.py    分析一个公开频道，生成 AI 频道推荐卡片草稿
 build_portable.py  生成 Windows 免安装包
 make_icon.py       生成应用图标（纯标准库，无依赖）
 create-shortcuts.ps1 创建桌面 / 开始菜单快捷方式

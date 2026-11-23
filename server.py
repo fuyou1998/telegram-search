@@ -40,6 +40,11 @@ class CandidateRequest(BaseModel):
     id: str = Field(min_length=1, max_length=64)
 
 
+class ChannelReviewRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=400)
+    sample_size: int = Field(default=30, ge=5, le=50)
+
+
 class TelegramCredentials(BaseModel):
     api_id: str = Field(max_length=30)
     api_hash: str = Field(max_length=64)
@@ -448,6 +453,13 @@ async def baseline_search(query: str = ""):
     if app.state.source is None:
         raise HTTPException(503, "请先登录 Telegram。")
     return await app.state.source.baseline(query)
+
+
+@app.post("/api/channel-review")
+async def channel_review(body: ChannelReviewRequest):
+    if app.state.source is None:
+        raise HTTPException(503, "请先登录 Telegram。")
+    return await app.state.source.review_channel(body.url, body.sample_size)
 
 
 @app.post("/api/history/{search_id}/restore")

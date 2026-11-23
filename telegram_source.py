@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import re
 import sqlite3
 import time
@@ -319,6 +320,93 @@ class TelegramSource:
             hits = [hit for chat in response.chats if (hit := _channel_hit(chat, "baseline", query))]
             return {"state": "done", "message": "", "results": hits}
 
+    async def review_channel(self, url: str, sample_size: int = 30) -> dict:
+        """Inspect a public channel/group and return factual metadata plus recent posts."""
+        canonical = normalize_target(url)
+        if not canonical or canonical.rsplit("/", 1)[-1].startswith("+"):
+            return {"state": "error", "message": "请提供公开频道或公开群组链接。"}
+        sample_size = max(5, min(50, int(sample_size)))
+        async with self._operation_lock:
+            try:
+                client = await self._connect()
+                if client is None:
+                    return {"state": "error", "message": "请先连接 Telegram。"}
+                username = canonical.rsplit("/", 1)[-1]
+                entity = await client.get_entity(f"@{username}")
+                if not isinstance(entity, types.Channel):
+                    return {"state": "error", "message": "这个链接不是公开群组或频道。"}
+
+                about = ""
+                members = getattr(entity, "participants_count", None)
+                try:
+                    full = await client(functions.channels.GetFullChannelRequest(channel=entity))
+                    about = full.full_chat.about or ""
+                    members = full.full_chat.participants_count or members
+                except (errors.RPCError, OSError, TimeoutError):
+                    pass
+
+                posts_raw = [
+                    message async for message in client.iter_messages(entity, limit=sample_size)
+                    if message.raw_text
+                ]
+                posts = []
+                for message in posts_raw:
+                    post_date = message.date.isoformat() if message.date else ""
+                    posts.append({
+                        "id": message.id,
+                        "date": post_date,
+                        "text": " ".join((message.raw_text or "").split())[:900],
+                        "url": f"{canonical}/{message.id}",
+                        "views": getattr(message, "views", None),
+                        "forwards": getattr(message, "forwards", None),
+                    })
+                dates = [message.date for message in posts_raw if message.date]
+                views = [message.views for message in posts_raw if isinstance(message.views, int)]
+
+                avatar_path = ""
+                avatar_base64 = ""
+                asset_dir = self.session_path.parent / "drafts" / "assets"
+                try:
+                    asset_dir.mkdir(parents=True, exist_ok=True)
+                    avatar_file = asset_dir / f"{username}.jpg"
+                    downloaded = await client.download_profile_photo(
+                        entity, file=str(avatar_file), download_big=True,
+                    )
+                    if downloaded:
+                        avatar_path = f"assets/{avatar_file.name}"
+                        avatar_base64 = base64.b64encode(avatar_file.read_bytes()).decode("ascii")
+                except (errors.RPCError, OSError, TimeoutError):
+                    pass
+
+                return {
+                    "state": "done",
+                    "channel": {
+                        "title": entity.title,
+                        "url": canonical,
+                        "username": getattr(entity, "username", None) or username,
+                        "kind": "group" if entity.megagroup else "channel",
+                        "members": members,
+                        "about": " ".join(about.split())[:1200],
+                        "verified": bool(getattr(entity, "verified", False)),
+                        "scam": bool(getattr(entity, "scam", False)),
+                        "fake": bool(getattr(entity, "fake", False)),
+                        "sampled_posts": len(posts),
+                        "latest_post_at": dates[0].isoformat() if dates else "",
+                        "oldest_sample_at": dates[-1].isoformat() if dates else "",
+                        "active_days": len({value.date().isoformat() for value in dates}),
+                        "average_views": round(sum(views) / len(views)) if views else None,
+                        "avatar_path": avatar_path,
+                        "avatar_base64": avatar_base64,
+                    },
+                    "posts": posts,
+                }
+            except errors.FloodWaitError as error:
+                return {"state": "limited", "message": f"Telegram 限流，约 {error.seconds} 秒后重试。"}
+            except errors.ChannelPrivateError:
+                return {"state": "requires_join", "message": "当前账号无权读取此群组或频道。"}
+            except (errors.RPCError, OSError, TimeoutError, ValueError):
+                return {"state": "error", "message": "无法读取该频道；请检查链接、网络和访问权限。"}
+
     async def discover(self, variants: list[str], on_candidate: HitCallback, on_source: SourceCallback) -> None:
         variants = list(dict.fromkeys(
             " ".join(query.split())[:160] for query in variants if query.strip()
@@ -587,6 +675,94 @@ class TelegramSource:
                 return {"state": "already_joined", "message": "账号已加入。"}
             await client(functions.channels.JoinChannelRequest(channel=target))
         return {"state": "joined", "message": "已加入。"}
+
+    async def review_channel(self, url: str, sample_size: int = 30) -> dict:
+        """Inspect a public channel and return verifiable facts plus recent public posts."""
+        canonical = normalize_target(url)
+        if not canonical or canonical.rsplit("/", 1)[-1].startswith("+"):
+            return {"state": "error", "message": "请提供公开频道或公开群组链接。"}
+        sample_size = max(5, min(50, int(sample_size)))
+
+        async with self._operation_lock:
+            try:
+                client = await self._connect()
+                if client is None:
+                    return {"state": "error", "message": "请先连接 Telegram。"}
+                username = canonical.rsplit("/", 1)[-1]
+                entity = await client.get_entity(f"@{username}")
+                if not isinstance(entity, types.Channel):
+                    return {"state": "error", "message": "这个链接不是公开群组或频道。"}
+
+                about = ""
+                members = getattr(entity, "participants_count", None)
+                try:
+                    full = await client(GetFullChannelRequest(channel=entity))
+                    about = full.full_chat.about or ""
+                    members = full.full_chat.participants_count or members
+                except (errors.RPCError, OSError, TimeoutError):
+                    # Public channel metadata can still be useful when full info is unavailable.
+                    pass
+
+                messages = [
+                    message async for message in client.iter_messages(entity, limit=sample_size)
+                    if message.raw_text
+                ]
+                avatar_path = ""
+                asset_dir = self.session_path.parent / "drafts" / "assets"
+                asset_dir.mkdir(parents=True, exist_ok=True)
+                avatar_file = asset_dir / f"{username}.jpg"
+                try:
+                    downloaded = await client.download_profile_photo(entity, file=str(avatar_file), download_big=True)
+                    if downloaded:
+                        avatar_path = f"assets/{avatar_file.name}"
+                except (errors.RPCError, OSError, TimeoutError):
+                    pass
+
+                posts = []
+                for message in messages:
+                    post_text = " ".join((message.raw_text or "").split())[:900]
+                    post_date = message.date.isoformat() if message.date else ""
+                    post_url = f"{canonical}/{message.id}"
+                    posts.append({
+                        "id": message.id,
+                        "date": post_date,
+                        "text": post_text,
+                        "url": post_url,
+                        "views": getattr(message, "views", None),
+                        "forwards": getattr(message, "forwards", None),
+                    })
+
+                dates = [message.date for message in messages if message.date]
+                active_days = len({value.date().isoformat() for value in dates})
+                view_values = [message.views for message in messages if isinstance(message.views, int)]
+                return {
+                    "state": "done",
+                    "channel": {
+                        "title": entity.title,
+                        "url": canonical,
+                        "username": getattr(entity, "username", None) or username,
+                        "kind": "group" if entity.megagroup else "channel",
+                        "members": members,
+                        "about": " ".join(about.split())[:1200],
+                        "verified": bool(getattr(entity, "verified", False)),
+                        "scam": bool(getattr(entity, "scam", False)),
+                        "fake": bool(getattr(entity, "fake", False)),
+                        "sample_size": sample_size,
+                        "sampled_posts": len(posts),
+                        "latest_post_at": dates[0].isoformat() if dates else "",
+                        "oldest_sample_at": dates[-1].isoformat() if dates else "",
+                        "active_days": active_days,
+                        "average_views": round(sum(view_values) / len(view_values)) if view_values else None,
+                        "avatar_path": avatar_path,
+                    },
+                    "posts": posts,
+                }
+            except errors.FloodWaitError as error:
+                return {"state": "limited", "message": f"Telegram 限流，约 {error.seconds} 秒后重试。"}
+            except errors.ChannelPrivateError:
+                return {"state": "requires_join", "message": "当前账号无权读取此群组或频道。"}
+            except (errors.RPCError, OSError, TimeoutError, ValueError):
+                return {"state": "error", "message": "无法读取该频道；请检查链接、网络和访问权限。"}
 
     async def join(self, url: str) -> dict:
         canonical = normalize_target(url)

@@ -7,7 +7,8 @@
 **Jimu (极目)** is a local Telegram group and channel search tool. It runs on your own computer and signs in with
 your own account. Your session, search history, and results stay on your computer—not on a Jimu server.
 Search terms and expanded keywords are sent to Telegram. If you configure an online AI provider, the original
-search term is also sent to that provider. Jimu searches Telegram's official index and search bots you choose,
+search term is also sent to that provider. When you explicitly use `channel_card.py --ai`, the selected public
+channel's about text and recent public posts are sent to that provider for a summary. Jimu searches Telegram's official index and search bots you choose,
 merges duplicate channels, enriches member counts, and searches messages using each chat's language.
 
 > You can customize the app name and your group/channel links under **Settings → Branding & promotion**.
@@ -139,6 +140,54 @@ You can also provide your own manually collected baseline:
 python compare.py --topics topics.txt --baseline manual.json
 ```
 
+## Daily channel draft
+
+`daily-digest.cmd` searches one topic through the local service, selects up to three public candidates not featured
+in the past 14 days, and writes a ready-to-review post to `.telegram-data/drafts/YYYY-MM-DD.txt`.
+**It never publishes automatically.** Check the links, group rules, and content before copying the draft to your channel.
+
+```bat
+daily-digest.cmd
+daily-digest.cmd --topic "open source AI tools"
+```
+
+The default rotation is in `daily_topics.example.txt`. Copy it to `daily_topics.txt` and put one topic per line to
+customize it. You can schedule `daily-digest.cmd` with Windows Task Scheduler; Jimu must be running first.
+Drafts and deduplication history stay local and are not committed to GitHub.
+
+## AI channel recommendation card
+
+Generate a recommendation-card draft from a public channel or group:
+
+```bat
+python channel_card.py https://t.me/example
+```
+
+Without `--ai`, Jimu locally formats public metadata, member count, latest-post date, view counts, and post excerpts.
+Add `--ai` to send the public about text and up to 30 recent public posts to your configured AI provider for a
+summary and topic tags:
+
+```bat
+python channel_card.py https://t.me/example --ai
+```
+
+The draft is saved under `.telegram-data/drafts/`. It is **not auto-published**; review the summary, links, and any
+AI-marked promotion signals before posting. Start with one channel and verify the quality before adding this to the
+daily curation workflow.
+
+You can also let the daily topic search choose its top candidate and create a card draft:
+
+```bat
+daily-digest.cmd --card --ai
+```
+
+It searches the day's topic, reviews the top candidate, and saves text/HTML/avatar draft assets. Human review is still
+required; nothing is sent to Telegram automatically.
+
+An interactive Bot API intake/publisher is not included yet. When adding it, use a dedicated BotFather token,
+admin approval, and only the channel-post permissions required; never ask submitters for their Telegram login codes
+or session files.
+
 ## Build the portable package
 
 ```bat
@@ -197,6 +246,8 @@ settings.py        Local .env settings
 history.py         Search history, query cache, and query statistics (SQLite)
 proxy_probe.py     Local proxy detection with Telegram TLS verification
 compare.py         Comparison against manual Telegram search
+daily_digest.py    Daily curated-group draft generator; never auto-publishes
+channel_card.py    Public-channel review and AI card draft
 build_portable.py  Windows portable package builder
 make_icon.py       Dependency-free icon generator
 create-shortcuts.ps1 Desktop and Start Menu shortcuts

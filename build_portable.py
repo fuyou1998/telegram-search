@@ -32,9 +32,11 @@ GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 
 APP_FILES = [
     "launcher.py", "server.py", "settings.py", "telegram_source.py", "search_quality.py",
-    "history.py", "proxy_probe.py", "telegram_login.py", "compare.py", "test_server.py",
+    "history.py", "proxy_probe.py", "telegram_login.py", "compare.py", "daily_digest.py",
+    "channel_card.py",
+    "test_server.py",
     "README.md", "README.en.md", "LICENSE", ".env.example", "requirements.txt", "create-shortcuts.ps1",
-    "screenshot.jpg",
+    "screenshot.jpg", "daily_topics.example.txt", "daily-digest.cmd",
 ]
 APP_DIRS = ["static"]
 
@@ -224,11 +226,35 @@ Q: 怎么给别人用？
   3-创建快捷方式.cmd 在桌面和开始菜单放一个「极目」图标
   4-诊断启动.cmd    出问题时用，窗口保持开启，能看到报错
   停止极目.cmd      关闭后台运行的服务
+  daily-digest.cmd  生成每日频道草稿，不会自动发布
+  daily_topics.example.txt  每日主题示例，可复制为 daily_topics.txt 自定义
   python\\           内置的 Python，不用另外安装
   static\\           网页界面
   .env              配置（登录时自动生成，也可以手动改）
   .telegram-data\\   登录后的会话，首次登录后自动生成
   search.db          历史记录，自动生成
+
+
+可选：每日生成频道草稿
+----------------------
+
+双击 daily-digest.cmd，会在 .telegram-data/drafts/ 生成当天的文案，不会自动发布。
+默认每天轮换一个主题，精选最多 3 个近 14 天没重复的候选。发布前请人工检查链接和内容。
+
+可以运行 daily-digest.cmd --topic "开源 AI 工具" 指定主题。
+加 --card 可把首选候选进一步分析成单频道推荐卡片；加 --ai 会把该公开频道简介和近期公开帖样本发给配置的 AI 服务做摘要：
+
+  daily-digest.cmd --card --ai
+
+也可以直接给一个公开频道链接生成卡片：
+
+  python channel_card.py https://t.me/example --ai
+
+会生成 .txt 文案、.html 卡片预览和可用作配图的频道头像。AI 会标记疑似推广内容，但不保证判断准确；
+请人工核实后再发布。脚本本身不会发送 Telegram 消息。
+
+想每天自动生成草稿，可用 Windows 任务计划程序每天运行 daily-digest.cmd；
+前提是「极目」服务正在运行。
 
 
 注意
